@@ -11,7 +11,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialogDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -26,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -108,24 +112,85 @@ fun AddToPlaylistDialog(
     var showDuplicateDialog by remember {
         mutableStateOf(false)
     }
-    var selectedPlaylist by remember {
-        mutableStateOf<Playlist?>(null)
-    }
     var songIds by remember {
         mutableStateOf<List<String>?>(null)
-    }
-    var duplicates by remember {
-        mutableStateOf(emptyList<String>())
     }
     var playlistsContainingSong by remember {
         mutableStateOf<Set<String>>(emptySet())
     }
+    var selectedPlaylistIds by remember {
+        mutableStateOf<Set<String>>(emptySet())
+    }
 
-    suspend fun addSongsAndSync(targetPlaylist: Playlist, ids: List<String>) {
+    // Snapshot of what was confirmed, so the duplicate warning acts on that and not on a
+    // selection the user may still be editing behind it.
+    var pendingTargets by remember {
+        mutableStateOf<List<Playlist>>(emptyList())
+    }
+    var pendingDuplicates by remember {
+        mutableStateOf<Map<String, List<String>>>(emptyMap())
+    }
+    var duplicateSummary by remember {
+        mutableStateOf(DuplicateSummary(songCount = 0, playlistCount = 0))
+    }
+
+    fun addSongsLocally(targetPlaylist: Playlist, ids: List<String>) {
         database.addSongsToPlaylist(targetPlaylist, ids.map { it to null }, prepend = true)
-        targetPlaylist.playlist.browseId?.let { plist ->
-            ids.forEach { songId ->
-                syncUtils.addToPlaylist(plist, targetPlaylist.id, songId)
+    }
+
+    suspend fun uploadSongs(targetPlaylist: Playlist, ids: List<String>) {
+        val browseId = targetPlaylist.playlist.browseId ?: return
+        ids.forEach { songId ->
+            syncUtils.addToPlaylist(browseId, targetPlaylist.id, songId)
+        }
+    }
+
+    // Every local row is committed before onLocalWritesDone dismisses the dialog, because
+    // dismissing it cancels this composition's scope and only the uploads can survive being cut
+    // short.
+    suspend fun applyAdditions(
+        targets: List<Playlist>,
+        additions: List<PlaylistAddition>,
+        onLocalWritesDone: () -> Unit,
+    ) {
+        val byId = targets.associateBy { it.id }
+        additions.forEach { addition ->
+            byId[addition.playlistId]?.let { addSongsLocally(it, addition.songIds) }
+        }
+        onLocalWritesDone()
+        additions.forEach { addition ->
+            byId[addition.playlistId]?.let { uploadSongs(it, addition.songIds) }
+        }
+    }
+
+    fun confirmSelection() {
+        val targets = playlists.filter { it.id in selectedPlaylistIds }
+        if (targets.isEmpty()) return
+        coroutineScope.launch(Dispatchers.IO) {
+            targets.forEach { playlist ->
+                val ids = onGetSong(playlist)
+                if (songIds == null) songIds = ids
+            }
+            val ids = songIds ?: return@launch
+            val duplicatesByPlaylist =
+                targets.associate { it.id to database.playlistDuplicates(it.id, ids) }
+            val summary = summarizeDuplicates(targets.map { it.id }, duplicatesByPlaylist)
+            if (summary.songCount > 0) {
+                pendingTargets = targets
+                pendingDuplicates = duplicatesByPlaylist
+                duplicateSummary = summary
+                showDuplicateDialog = true
+            } else {
+                applyAdditions(
+                    targets = targets,
+                    additions = planPlaylistAdditions(
+                        selectedPlaylistIds = targets.map { it.id },
+                        songIds = ids,
+                        duplicatesByPlaylist = duplicatesByPlaylist,
+                        skipDuplicates = false,
+                    ),
+                    onLocalWritesDone = onDismiss,
+                )
             }
         }
     }
@@ -140,6 +205,7 @@ fun AddToPlaylistDialog(
     LaunchedEffect(isVisible, songIds, playlists) {
         if (!isVisible) {
             playlistsContainingSong = emptySet()
+            selectedPlaylistIds = emptySet()
             return@LaunchedEffect
         }
         val ids = songIds ?: return@LaunchedEffect
@@ -191,6 +257,34 @@ fun AddToPlaylistDialog(
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                     )
+                }
+            }
+
+            val selectedCount = playlists.count { it.id in selectedPlaylistIds }
+            if (selectedCount > 0) {
+                stickyHeader {
+                    Surface(
+                        color = AlertDialogDefaults.containerColor,
+                        tonalElevation = AlertDialogDefaults.TonalElevation,
+                    ) {
+                        FilledTonalButton(
+                            onClick = { confirmSelection() },
+                            shape = RoundedCornerShape(50),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                        ) {
+                            Text(
+                                text = pluralStringResource(
+                                    R.plurals.add_to_n_playlists,
+                                    selectedCount,
+                                    selectedCount,
+                                ),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
                 }
             }
 
@@ -278,6 +372,7 @@ fun AddToPlaylistDialog(
 
             items(playlists) { playlist ->
                 val containsSong = playlist.id in playlistsContainingSong
+                val selected = playlist.id in selectedPlaylistIds
                 val rowBg by animateColorAsState(
                     targetValue = if (containsSong)
                         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
@@ -287,26 +382,20 @@ fun AddToPlaylistDialog(
                 )
                 PlaylistListItem(
                     playlist = playlist,
+                    trailingContent = {
+                        Checkbox(
+                            checked = selected,
+                            onCheckedChange = null,
+                        )
+                    },
                     modifier = Modifier
                     .padding(horizontal = 8.dp, vertical = 2.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .background(rowBg)
                     .clickable {
-                        selectedPlaylist = playlist
-                        coroutineScope.launch(Dispatchers.IO) {
-                            if (songIds == null) {
-                                songIds = onGetSong(playlist)
-                            } else {
-                                onGetSong(playlist)
-                            }
-                            duplicates = database.playlistDuplicates(playlist.id, songIds!!)
-                            if (duplicates.isNotEmpty()) {
-                                showDuplicateDialog = true
-                            } else {
-                                onDismiss()
-                                addSongsAndSync(playlist, songIds!!)
-                            }
-                        }
+                        selectedPlaylistIds =
+                            if (selected) selectedPlaylistIds - playlist.id
+                            else selectedPlaylistIds + playlist.id
                     }
                 )
             }
@@ -322,58 +411,71 @@ fun AddToPlaylistDialog(
     }
 
     // duplicate songs warning
-        if (showDuplicateDialog) {
-            DefaultDialog(
-                title = { Text(stringResource(R.string.duplicates)) },
-                buttons = {
-                    TextButton(
-                        onClick = {
-                            showDuplicateDialog = false
-                            onDismiss()
-                            coroutineScope.launch(Dispatchers.IO) {
-                                addSongsAndSync(
-                                    selectedPlaylist!!,
-                                    songIds!!.filter { !duplicates.contains(it) }
-                                )
-                            }
-                        }
-                    ) {
-                        Text(stringResource(R.string.skip_duplicates))
-                    }
-
-                    TextButton(
-                        onClick = {
-                            showDuplicateDialog = false
-                            onDismiss()
-                            coroutineScope.launch(Dispatchers.IO) {
-                                addSongsAndSync(selectedPlaylist!!, songIds!!)
-                            }
-                        }
-                    ) {
-                        Text(stringResource(R.string.add_anyway))
-                    }
-
-                    TextButton(
-                        onClick = {
-                            showDuplicateDialog = false
-                        }
-                    ) {
-                        Text(stringResource(android.R.string.cancel))
-                    }
-                },
-                onDismiss = {
-                    showDuplicateDialog = false
-                }
-            ) {
-                Text(
-                    text = if (duplicates.size == 1) {
-                        stringResource(R.string.duplicates_description_single)
-                    } else {
-                        stringResource(R.string.duplicates_description_multiple, duplicates.size)
-                    },
-                    textAlign = TextAlign.Start,
-                    modifier = Modifier.align(Alignment.Start)
+    if (showDuplicateDialog) {
+        fun applyPending(skipDuplicates: Boolean) {
+            showDuplicateDialog = false
+            val targets = pendingTargets
+            val duplicatesByPlaylist = pendingDuplicates
+            val ids = songIds.orEmpty()
+            coroutineScope.launch(Dispatchers.IO) {
+                applyAdditions(
+                    targets = targets,
+                    additions = planPlaylistAdditions(
+                        selectedPlaylistIds = targets.map { it.id },
+                        songIds = ids,
+                        duplicatesByPlaylist = duplicatesByPlaylist,
+                        skipDuplicates = skipDuplicates,
+                    ),
+                    onLocalWritesDone = onDismiss,
                 )
             }
         }
+
+        DefaultDialog(
+            title = { Text(stringResource(R.string.duplicates)) },
+            buttons = {
+                TextButton(
+                    onClick = { applyPending(skipDuplicates = true) }
+                ) {
+                    Text(stringResource(R.string.skip_duplicates))
+                }
+
+                TextButton(
+                    onClick = { applyPending(skipDuplicates = false) }
+                ) {
+                    Text(stringResource(R.string.add_anyway))
+                }
+
+                TextButton(
+                    onClick = {
+                        showDuplicateDialog = false
+                    }
+                ) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            },
+            onDismiss = {
+                showDuplicateDialog = false
+            }
+        ) {
+            Text(
+                text = when {
+                    duplicateSummary.playlistCount > 1 -> pluralStringResource(
+                        R.plurals.duplicates_description_playlists,
+                        duplicateSummary.songCount,
+                        duplicateSummary.songCount,
+                        duplicateSummary.playlistCount,
+                    )
+                    duplicateSummary.songCount == 1 ->
+                        stringResource(R.string.duplicates_description_single)
+                    else -> stringResource(
+                        R.string.duplicates_description_multiple,
+                        duplicateSummary.songCount,
+                    )
+                },
+                textAlign = TextAlign.Start,
+                modifier = Modifier.align(Alignment.Start)
+            )
+        }
+    }
 }

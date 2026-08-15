@@ -1024,4 +1024,14 @@
     <string name="stream_source_web_creator_desc">Creator web client.</string>
     <string name="stream_source_android_creator">ANDROID_CREATOR</string>
     <string name="stream_source_android_creator_desc">Android creator client. Off by default; needs DroidGuard.</string>
+
+    <!-- Add to playlist: multi-selection -->
+    <plurals name="add_to_n_playlists">
+        <item quantity="one">Add to %d playlist</item>
+        <item quantity="other">Add to %d playlists</item>
+    </plurals>
+    <plurals name="duplicates_description_playlists">
+        <item quantity="one">%1$d song is already in %2$d of the selected playlists</item>
+        <item quantity="other">%1$d songs are already in %2$d of the selected playlists</item>
+    </plurals>
 </resources>
