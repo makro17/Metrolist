@@ -91,43 +91,6 @@ class AddToPlaylistPlanTest {
     }
 
     @Test
-    fun `duplicates present in several playlists are counted once`() {
-        val summary = summarizeDuplicates(
-            selectedPlaylistIds = listOf("a", "b", "c"),
-            duplicatesByPlaylist = mapOf(
-                "a" to listOf("s1", "s2"),
-                "b" to listOf("s1"),
-                "c" to emptyList(),
-            ),
-        )
-
-        assertEquals(DuplicateSummary(songCount = 2, playlistCount = 2), summary)
-    }
-
-    @Test
-    fun `duplicates in unselected playlists are ignored`() {
-        val summary = summarizeDuplicates(
-            selectedPlaylistIds = listOf("a"),
-            duplicatesByPlaylist = mapOf(
-                "a" to emptyList(),
-                "z" to listOf("s1", "s2", "s3"),
-            ),
-        )
-
-        assertEquals(DuplicateSummary(songCount = 0, playlistCount = 0), summary)
-    }
-
-    @Test
-    fun `a playlist missing from the duplicate map has no duplicates`() {
-        val summary = summarizeDuplicates(
-            selectedPlaylistIds = listOf("a", "b"),
-            duplicatesByPlaylist = emptyMap(),
-        )
-
-        assertEquals(DuplicateSummary(songCount = 0, playlistCount = 0), summary)
-    }
-
-    @Test
     fun `a playlist holding none of the songs offers add`() {
         assertEquals(RowAction.Add, rowActionFor(sourceCount = 12, presentCount = 0))
     }

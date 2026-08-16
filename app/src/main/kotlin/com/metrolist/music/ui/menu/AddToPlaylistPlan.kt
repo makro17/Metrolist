@@ -11,21 +11,6 @@ data class PlaylistAddition(
     val songIds: List<String>,
 )
 
-/** How many distinct songs are already present, and in how many of the selected playlists. */
-data class DuplicateSummary(
-    val songCount: Int,
-    val playlistCount: Int,
-)
-
-fun summarizeDuplicates(
-    selectedPlaylistIds: List<String>,
-    duplicatesByPlaylist: Map<String, List<String>>,
-): DuplicateSummary {
-    val affected = selectedPlaylistIds.filter { !duplicatesByPlaylist[it].isNullOrEmpty() }
-    val distinctSongs = affected.flatMapTo(mutableSetOf()) { duplicatesByPlaylist[it].orEmpty() }
-    return DuplicateSummary(songCount = distinctSongs.size, playlistCount = affected.size)
-}
-
 /** What a playlist row's button does, given what that playlist already holds. */
 enum class RowAction {
     Add,
