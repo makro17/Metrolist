@@ -1154,6 +1154,9 @@ interface DatabaseDao {
     )
     fun updatePlaylistSongSetVideoId(playlistId: String, songId: String, setVideoId: String)
 
+    @Query("SELECT * FROM playlist_song_map WHERE playlistId = :playlistId AND songId IN (:songIds) ORDER BY position")
+    fun playlistSongMaps(playlistId: String, songIds: List<String>): List<PlaylistSongMap>
+
     @Transaction
     fun addSongToPlaylist(playlist: Playlist, songIds: List<String>) {
         var position = playlist.songCount
