@@ -138,28 +138,21 @@ fun AddToPlaylistDialog(
         database.addSongsToPlaylist(targetPlaylist, ids.map { it to null }, prepend = true)
     }
 
-    suspend fun uploadSongs(targetPlaylist: Playlist, ids: List<String>) {
+    fun uploadSongs(targetPlaylist: Playlist, ids: List<String>) {
         val browseId = targetPlaylist.playlist.browseId ?: return
-        ids.forEach { songId ->
-            syncUtils.addToPlaylist(browseId, targetPlaylist.id, songId)
-        }
+        syncUtils.addSongsToPlaylist(browseId, targetPlaylist.id, targetPlaylist.playlist.name, ids)
     }
 
-    // Every local row is committed before onLocalWritesDone dismisses the dialog, because
-    // dismissing it cancels this composition's scope and only the uploads can survive being cut
-    // short.
-    suspend fun applyAdditions(
+    fun applyAdditions(
         targets: List<Playlist>,
         additions: List<PlaylistAddition>,
-        onLocalWritesDone: () -> Unit,
     ) {
         val byId = targets.associateBy { it.id }
         additions.forEach { addition ->
-            byId[addition.playlistId]?.let { addSongsLocally(it, addition.songIds) }
-        }
-        onLocalWritesDone()
-        additions.forEach { addition ->
-            byId[addition.playlistId]?.let { uploadSongs(it, addition.songIds) }
+            byId[addition.playlistId]?.let { target ->
+                addSongsLocally(target, addition.songIds)
+                uploadSongs(target, addition.songIds)
+            }
         }
     }
 
@@ -189,8 +182,8 @@ fun AddToPlaylistDialog(
                         duplicatesByPlaylist = duplicatesByPlaylist,
                         skipDuplicates = false,
                     ),
-                    onLocalWritesDone = onDismiss,
                 )
+                onDismiss()
             }
         }
     }
@@ -426,8 +419,8 @@ fun AddToPlaylistDialog(
                         duplicatesByPlaylist = duplicatesByPlaylist,
                         skipDuplicates = skipDuplicates,
                     ),
-                    onLocalWritesDone = onDismiss,
                 )
+                onDismiss()
             }
         }
 

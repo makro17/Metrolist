@@ -1034,4 +1034,8 @@
         <item quantity="one">%1$d song is already in %2$d of the selected playlists</item>
         <item quantity="other">%1$d songs are already in %2$d of the selected playlists</item>
     </plurals>
+    <plurals name="playlist_upload_failed">
+        <item quantity="one">%1$d song was not added to YouTube in %2$s</item>
+        <item quantity="other">%1$d songs were not added to YouTube in %2$s</item>
+    </plurals>
 </resources>
