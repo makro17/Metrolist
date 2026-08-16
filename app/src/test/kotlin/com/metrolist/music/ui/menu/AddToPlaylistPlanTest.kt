@@ -126,4 +126,29 @@ class AddToPlaylistPlanTest {
 
         assertEquals(DuplicateSummary(songCount = 0, playlistCount = 0), summary)
     }
+
+    @Test
+    fun `a playlist holding none of the songs offers add`() {
+        assertEquals(RowAction.Add, rowActionFor(sourceCount = 12, presentCount = 0))
+    }
+
+    @Test
+    fun `a playlist holding some of the songs still offers add`() {
+        assertEquals(RowAction.Add, rowActionFor(sourceCount = 12, presentCount = 3))
+    }
+
+    @Test
+    fun `a playlist holding every song offers remove`() {
+        assertEquals(RowAction.Remove, rowActionFor(sourceCount = 12, presentCount = 12))
+    }
+
+    @Test
+    fun `a single song already present offers remove`() {
+        assertEquals(RowAction.Remove, rowActionFor(sourceCount = 1, presentCount = 1))
+    }
+
+    @Test
+    fun `no source songs offers add`() {
+        assertEquals(RowAction.Add, rowActionFor(sourceCount = 0, presentCount = 0))
+    }
 }

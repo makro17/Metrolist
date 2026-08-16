@@ -26,6 +26,19 @@ fun summarizeDuplicates(
     return DuplicateSummary(songCount = distinctSongs.size, playlistCount = affected.size)
 }
 
+/** What a playlist row's button does, given what that playlist already holds. */
+enum class RowAction {
+    Add,
+    Remove,
+}
+
+/**
+ * A row offers removal only once the playlist holds every source song; holding some of them still
+ * offers add, which then adds the remainder.
+ */
+fun rowActionFor(sourceCount: Int, presentCount: Int): RowAction =
+    if (sourceCount > 0 && presentCount >= sourceCount) RowAction.Remove else RowAction.Add
+
 fun planPlaylistAdditions(
     selectedPlaylistIds: List<String>,
     songIds: List<String>,
