@@ -1024,4 +1024,9 @@
     <string name="stream_source_web_creator_desc">Creator web client.</string>
     <string name="stream_source_android_creator">ANDROID_CREATOR</string>
     <string name="stream_source_android_creator_desc">Android creator client. Off by default; needs DroidGuard.</string>
+
+    <plurals name="playlist_upload_failed">
+        <item quantity="one">%1$d song was not added to YouTube in %2$s</item>
+        <item quantity="other">%1$d songs were not added to YouTube in %2$s</item>
+    </plurals>
 </resources>
