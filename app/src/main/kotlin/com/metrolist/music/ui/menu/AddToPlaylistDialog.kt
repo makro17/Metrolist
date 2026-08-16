@@ -5,16 +5,14 @@
 
 package com.metrolist.music.ui.menu
 
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialogDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -68,6 +67,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconToggleButton
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
@@ -91,6 +91,7 @@ fun AddToPlaylistDialog(
 ) {
     val database = LocalDatabase.current
     val syncUtils = LocalSyncUtils.current
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val (sortType, onSortTypeChange) = rememberEnumPreference(
         AddToPlaylistSortTypeKey,
@@ -109,82 +110,93 @@ fun AddToPlaylistDialog(
         mutableStateOf(false)
     }
 
-    var showDuplicateDialog by remember {
-        mutableStateOf(false)
-    }
     var songIds by remember {
         mutableStateOf<List<String>?>(null)
     }
-    var playlistsContainingSong by remember {
-        mutableStateOf<Set<String>>(emptySet())
-    }
-    var selectedPlaylistIds by remember {
-        mutableStateOf<Set<String>>(emptySet())
+    var presentCounts by remember {
+        mutableStateOf<Map<String, Int>>(emptyMap())
     }
 
-    // Snapshot of what was confirmed, so the duplicate warning acts on that and not on a
-    // selection the user may still be editing behind it.
-    var pendingTargets by remember {
-        mutableStateOf<List<Playlist>>(emptyList())
+    // Snapshots of what an action was started on, so a warning acts on that and not on state the
+    // list may have moved underneath it.
+    var pendingAdd by remember {
+        mutableStateOf<Pair<Playlist, List<String>>?>(null)
     }
-    var pendingDuplicates by remember {
-        mutableStateOf<Map<String, List<String>>>(emptyMap())
-    }
-    var duplicateSummary by remember {
-        mutableStateOf(DuplicateSummary(songCount = 0, playlistCount = 0))
+    var pendingRemove by remember {
+        mutableStateOf<Playlist?>(null)
     }
 
-    fun addSongsLocally(targetPlaylist: Playlist, ids: List<String>) {
-        database.addSongsToPlaylist(targetPlaylist, ids.map { it to null }, prepend = true)
+    suspend fun toast(message: String) {
+        withContext(Dispatchers.Main) {
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
     }
 
-    fun uploadSongs(targetPlaylist: Playlist, ids: List<String>) {
-        val browseId = targetPlaylist.playlist.browseId ?: return
-        syncUtils.addSongsToPlaylist(browseId, targetPlaylist.id, targetPlaylist.playlist.name, ids)
-    }
-
-    fun applyAdditions(
-        targets: List<Playlist>,
-        additions: List<PlaylistAddition>,
+    suspend fun applyAdd(
+        target: Playlist,
+        ids: List<String>,
+        duplicates: List<String>,
+        skipDuplicates: Boolean,
     ) {
-        val byId = targets.associateBy { it.id }
-        additions.forEach { addition ->
-            byId[addition.playlistId]?.let { target ->
-                addSongsLocally(target, addition.songIds)
-                uploadSongs(target, addition.songIds)
+        val added = planPlaylistAdditions(
+            selectedPlaylistIds = listOf(target.id),
+            songIds = ids,
+            duplicatesByPlaylist = mapOf(target.id to duplicates),
+            skipDuplicates = skipDuplicates,
+        ).firstOrNull()?.songIds ?: return
+
+        database.addSongsToPlaylist(target, added.map { it to null }, prepend = true)
+        target.playlist.browseId?.let { browseId ->
+            syncUtils.addSongsToPlaylist(browseId, target.id, target.playlist.name, added)
+        }
+        toast(context.resources.getQuantityString(R.plurals.n_songs_added, added.size, added.size))
+    }
+
+    fun startAdd(target: Playlist) {
+        val ids = songIds ?: return
+        coroutineScope.launch(Dispatchers.IO) {
+            onGetSong(target)
+            val duplicates = database.playlistDuplicates(target.id, ids)
+            if (duplicates.isNotEmpty()) {
+                pendingAdd = target to duplicates
+            } else {
+                applyAdd(target, ids, duplicates = emptyList(), skipDuplicates = false)
             }
         }
     }
 
-    fun confirmSelection() {
-        val targets = playlists.filter { it.id in selectedPlaylistIds }
-        if (targets.isEmpty()) return
+    fun applyRemove(target: Playlist) {
+        val ids = songIds ?: return
         coroutineScope.launch(Dispatchers.IO) {
-            targets.forEach { playlist ->
-                val ids = onGetSong(playlist)
-                if (songIds == null) songIds = ids
+            // Read before deleting: the setVideoId lives on the row about to disappear.
+            val maps = database.playlistSongMaps(target.id, ids)
+                .sortedByDescending { it.position }
+            if (maps.isEmpty()) return@launch
+
+            // Descending order matters: move() shifts only the positions above the row it moves, so
+            // the rows still pending keep the positions just read.
+            database.transaction {
+                maps.forEach { map ->
+                    move(map.playlistId, map.position, Int.MAX_VALUE)
+                    delete(map.copy(position = Int.MAX_VALUE))
+                }
             }
-            val ids = songIds ?: return@launch
-            val duplicatesByPlaylist =
-                targets.associate { it.id to database.playlistDuplicates(it.id, ids) }
-            val summary = summarizeDuplicates(targets.map { it.id }, duplicatesByPlaylist)
-            if (summary.songCount > 0) {
-                pendingTargets = targets
-                pendingDuplicates = duplicatesByPlaylist
-                duplicateSummary = summary
-                showDuplicateDialog = true
-            } else {
-                applyAdditions(
-                    targets = targets,
-                    additions = planPlaylistAdditions(
-                        selectedPlaylistIds = targets.map { it.id },
-                        songIds = ids,
-                        duplicatesByPlaylist = duplicatesByPlaylist,
-                        skipDuplicates = false,
-                    ),
+
+            target.playlist.browseId?.let { browseId ->
+                syncUtils.removeSongsFromPlaylist(
+                    browseId,
+                    target.id,
+                    target.playlist.name,
+                    maps.map { it.songId to it.setVideoId },
                 )
-                onDismiss()
             }
+            toast(
+                context.resources.getQuantityString(
+                    R.plurals.n_songs_removed,
+                    maps.size,
+                    maps.size,
+                )
+            )
         }
     }
 
@@ -197,16 +209,14 @@ fun AddToPlaylistDialog(
     }
     LaunchedEffect(isVisible, songIds, playlists) {
         if (!isVisible) {
-            playlistsContainingSong = emptySet()
-            selectedPlaylistIds = emptySet()
+            presentCounts = emptyMap()
             return@LaunchedEffect
         }
         val ids = songIds ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
-            playlistsContainingSong = playlists
-                .filter { database.playlistDuplicates(it.id, ids).isNotEmpty() }
-                .map { it.id }
-                .toSet()
+            presentCounts = playlists.associate { playlist ->
+                playlist.id to database.playlistDuplicates(playlist.id, ids).size
+            }
         }
     }
 
@@ -250,34 +260,6 @@ fun AddToPlaylistDialog(
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                     )
-                }
-            }
-
-            val selectedCount = playlists.count { it.id in selectedPlaylistIds }
-            if (selectedCount > 0) {
-                stickyHeader {
-                    Surface(
-                        color = AlertDialogDefaults.containerColor,
-                        tonalElevation = AlertDialogDefaults.TonalElevation,
-                    ) {
-                        FilledTonalButton(
-                            onClick = { confirmSelection() },
-                            shape = RoundedCornerShape(50),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                        ) {
-                            Text(
-                                text = pluralStringResource(
-                                    R.plurals.add_to_n_playlists,
-                                    selectedCount,
-                                    selectedCount,
-                                ),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                        }
-                    }
                 }
             }
 
@@ -364,32 +346,46 @@ fun AddToPlaylistDialog(
             }
 
             items(playlists) { playlist ->
-                val containsSong = playlist.id in playlistsContainingSong
-                val selected = playlist.id in selectedPlaylistIds
+                val presentCount = presentCounts[playlist.id] ?: 0
+                val action = rowActionFor(
+                    sourceCount = songIds?.size ?: 0,
+                    presentCount = presentCount,
+                )
                 val rowBg by animateColorAsState(
-                    targetValue = if (containsSong)
+                    targetValue = if (presentCount > 0)
                         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
                     else Color.Transparent,
                     animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
                     label = "playlistBg"
                 )
+
+                fun act() {
+                    when (action) {
+                        RowAction.Add -> startAdd(playlist)
+                        RowAction.Remove -> pendingRemove = playlist
+                    }
+                }
+
                 PlaylistListItem(
                     playlist = playlist,
                     trailingContent = {
-                        Checkbox(
-                            checked = selected,
-                            onCheckedChange = null,
-                        )
+                        IconButton(onClick = { act() }) {
+                            Icon(
+                                painter = painterResource(
+                                    if (action == RowAction.Add) R.drawable.add else R.drawable.remove
+                                ),
+                                contentDescription = stringResource(
+                                    if (action == RowAction.Add) R.string.add_to_playlist
+                                    else R.string.remove_from_playlist
+                                ),
+                            )
+                        }
                     },
                     modifier = Modifier
                     .padding(horizontal = 8.dp, vertical = 2.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .background(rowBg)
-                    .clickable {
-                        selectedPlaylistIds =
-                            if (selected) selectedPlaylistIds - playlist.id
-                            else selectedPlaylistIds + playlist.id
-                    }
+                    .clickable { act() }
                 )
             }
         }
@@ -403,68 +399,79 @@ fun AddToPlaylistDialog(
         )
     }
 
-    // duplicate songs warning
-    if (showDuplicateDialog) {
-        fun applyPending(skipDuplicates: Boolean) {
-            showDuplicateDialog = false
-            val targets = pendingTargets
-            val duplicatesByPlaylist = pendingDuplicates
+    // duplicate songs warning, for the one playlist the add was started on
+    pendingAdd?.let { (target, duplicates) ->
+        fun apply(skipDuplicates: Boolean) {
             val ids = songIds.orEmpty()
+            pendingAdd = null
             coroutineScope.launch(Dispatchers.IO) {
-                applyAdditions(
-                    targets = targets,
-                    additions = planPlaylistAdditions(
-                        selectedPlaylistIds = targets.map { it.id },
-                        songIds = ids,
-                        duplicatesByPlaylist = duplicatesByPlaylist,
-                        skipDuplicates = skipDuplicates,
-                    ),
-                )
-                onDismiss()
+                applyAdd(target, ids, duplicates, skipDuplicates)
             }
         }
 
         DefaultDialog(
             title = { Text(stringResource(R.string.duplicates)) },
             buttons = {
-                TextButton(
-                    onClick = { applyPending(skipDuplicates = true) }
-                ) {
+                TextButton(onClick = { apply(skipDuplicates = true) }) {
                     Text(stringResource(R.string.skip_duplicates))
                 }
 
-                TextButton(
-                    onClick = { applyPending(skipDuplicates = false) }
-                ) {
+                TextButton(onClick = { apply(skipDuplicates = false) }) {
                     Text(stringResource(R.string.add_anyway))
                 }
 
-                TextButton(
-                    onClick = {
-                        showDuplicateDialog = false
-                    }
-                ) {
+                TextButton(onClick = { pendingAdd = null }) {
                     Text(stringResource(android.R.string.cancel))
                 }
             },
-            onDismiss = {
-                showDuplicateDialog = false
-            }
+            onDismiss = { pendingAdd = null }
         ) {
             Text(
-                text = when {
-                    duplicateSummary.playlistCount > 1 -> pluralStringResource(
-                        R.plurals.duplicates_description_playlists,
-                        duplicateSummary.songCount,
-                        duplicateSummary.songCount,
-                        duplicateSummary.playlistCount,
+                text = if (duplicates.size == 1) {
+                    stringResource(R.string.duplicates_description_single)
+                } else {
+                    stringResource(R.string.duplicates_description_multiple, duplicates.size)
+                },
+                textAlign = TextAlign.Start,
+                modifier = Modifier.align(Alignment.Start)
+            )
+        }
+    }
+
+    pendingRemove?.let { target ->
+        val count = songIds?.size ?: 0
+        DefaultDialog(
+            title = { Text(stringResource(R.string.remove_from_playlist)) },
+            buttons = {
+                TextButton(
+                    onClick = {
+                        pendingRemove = null
+                        applyRemove(target)
+                    }
+                ) {
+                    Text(stringResource(R.string.remove))
+                }
+
+                TextButton(onClick = { pendingRemove = null }) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            },
+            onDismiss = { pendingRemove = null }
+        ) {
+            Text(
+                text = buildString {
+                    append(
+                        pluralStringResource(
+                            R.plurals.remove_n_songs_confirm,
+                            count,
+                            count,
+                            target.playlist.name,
+                        )
                     )
-                    duplicateSummary.songCount == 1 ->
-                        stringResource(R.string.duplicates_description_single)
-                    else -> stringResource(
-                        R.string.duplicates_description_multiple,
-                        duplicateSummary.songCount,
-                    )
+                    if (target.playlist.browseId != null) {
+                        append(" ")
+                        append(stringResource(R.string.remove_also_from_youtube))
+                    }
                 },
                 textAlign = TextAlign.Start,
                 modifier = Modifier.align(Alignment.Start)
