@@ -1043,6 +1043,35 @@
     </plurals>
     <string name="remove">Remove</string>
     <string name="remove_also_from_youtube">They will also be deleted from this playlist on YouTube.</string>
+    <string name="compare_with_youtube">Compare with YouTube</string>
+    <string name="compare_with_youtube_desc">See what this playlist and YouTube do not share</string>
+    <string name="compare">Compare</string>
+    <string name="comparison_only_here">Only here</string>
+    <string name="comparison_only_on_youtube">Only on YouTube</string>
+    <string name="comparison_reading">Reading the playlist on YouTube… %1$d</string>
+    <string name="comparison_reading_of">Reading the playlist on YouTube… %1$d / %2$d</string>
+    <string name="comparison_failed">This playlist could not be read from YouTube, and there is no honest comparison without it.</string>
+    <string name="comparison_truncated">This playlist is too long to read from YouTube in full, so it cannot be compared safely.</string>
+    <string name="comparison_in_sync">This playlist and YouTube hold the same songs.</string>
+    <string name="comparison_nothing_only_here">Nothing here is missing from YouTube.</string>
+    <string name="comparison_nothing_only_on_youtube">Nothing on YouTube is missing here.</string>
+    <string name="comparison_never_confirmed">Added on this device, never confirmed on YouTube</string>
+    <string name="comparison_upload_one">Upload to YouTube</string>
+    <string name="comparison_add_one">Add to this device</string>
+    <string name="comparison_remove_from_youtube">Remove from YouTube</string>
+    <string name="comparison_remove_from_youtube_confirm">Remove %1$s from this playlist on YouTube?</string>
+    <plurals name="comparison_upload_all">
+        <item quantity="one">Upload the song to YouTube</item>
+        <item quantity="other">Upload the %d songs to YouTube</item>
+    </plurals>
+    <plurals name="comparison_add_all">
+        <item quantity="one">Add the song here</item>
+        <item quantity="other">Add the %d songs here</item>
+    </plurals>
+    <plurals name="songs_maybe_not_on_youtube">
+        <item quantity="one">%d song may not be on YouTube</item>
+        <item quantity="other">%d songs may not be on YouTube</item>
+    </plurals>
     <plurals name="playlist_remove_failed">
         <item quantity="one">%1$d song was not removed from YouTube in %2$s</item>
         <item quantity="other">%1$d songs were not removed from YouTube in %2$s</item>

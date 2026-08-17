@@ -36,6 +36,7 @@ import com.metrolist.music.ui.screens.playlist.AutoPlaylistScreen
 import com.metrolist.music.ui.screens.playlist.CachePlaylistScreen
 import com.metrolist.music.ui.screens.playlist.LocalPlaylistScreen
 import com.metrolist.music.ui.screens.playlist.OnlinePlaylistScreen
+import com.metrolist.music.ui.screens.playlist.PlaylistComparisonScreen
 import com.metrolist.music.ui.screens.playlist.TopPlaylistScreen
 import com.metrolist.music.ui.screens.podcast.OnlinePodcastScreen
 import com.metrolist.music.ui.screens.recognition.RecognitionHistoryScreen
@@ -290,6 +291,18 @@ fun NavGraphBuilder.navigationBuilder(
             ),
     ) {
         LocalPlaylistScreen(navController)
+    }
+
+    composable(
+        route = "playlist_comparison/{playlistId}",
+        arguments =
+            listOf(
+                navArgument("playlistId") {
+                    type = NavType.StringType
+                },
+            ),
+    ) {
+        PlaylistComparisonScreen(navController)
     }
 
     composable(
