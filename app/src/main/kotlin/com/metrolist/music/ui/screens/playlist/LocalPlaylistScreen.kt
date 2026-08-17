@@ -38,6 +38,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -1386,6 +1387,9 @@ fun LocalPlaylistHeader(
                             context = context,
                             downloadState = downloadState,
                             onEdit = onShowEditDialog,
+                            onCompare = {
+                                navController.navigate("playlist_comparison/${playlist.id}")
+                            },
                             onSync = {
                                 scope.launch(Dispatchers.IO) {
                                     syncUtils.syncPlaylistSuspend(
@@ -1457,6 +1461,51 @@ fun LocalPlaylistHeader(
                         contentDescription = null,
                         modifier = Modifier.size(24.dp),
                     )
+                }
+            }
+        }
+
+        // A song this device added and never saw confirmed may simply be missing from YouTube. The
+        // count is a local query and costs no network; the comparison behind the button is the one
+        // that asks YouTube.
+        if (playlist.playlist.browseId != null) {
+            val unconfirmedCount by database
+                .unconfirmedSongCount(playlist.id)
+                .collectAsStateWithLifecycle(initialValue = 0)
+
+            if (unconfirmedCount > 0) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(start = 16.dp, top = 8.dp, end = 8.dp, bottom = 8.dp),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.info),
+                            contentDescription = null,
+                        )
+                        Text(
+                            text = pluralStringResource(
+                                R.plurals.songs_maybe_not_on_youtube,
+                                unconfirmedCount,
+                                unconfirmedCount,
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 12.dp),
+                        )
+                        TextButton(
+                            onClick = {
+                                navController.navigate("playlist_comparison/${playlist.id}")
+                            },
+                        ) {
+                            Text(stringResource(R.string.compare))
+                        }
+                    }
                 }
             }
         }

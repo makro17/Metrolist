@@ -55,6 +55,7 @@ fun LocalPlaylistMenu(
     context: Context,
     downloadState: Int,
     onEdit: () -> Unit,
+    onCompare: () -> Unit,
     onSync: () -> Unit,
     onDelete: () -> Unit,
     onDownload: () -> Unit,
@@ -145,6 +146,22 @@ fun LocalPlaylistMenu(
 
             // Show sync button only for YouTube playlists
             if (isYouTubePlaylist) {
+                add(
+                    Material3MenuItemData(
+                        title = { Text(stringResource(R.string.compare_with_youtube)) },
+                        description = { Text(stringResource(R.string.compare_with_youtube_desc)) },
+                        icon = {
+                            Icon(
+                                painter = painterResource(R.drawable.cloud),
+                                contentDescription = null,
+                            )
+                        },
+                        onClick = {
+                            onCompare()
+                            onDismiss()
+                        },
+                    ),
+                )
                 add(
                     Material3MenuItemData(
                         title = { Text(stringResource(R.string.action_sync)) },
