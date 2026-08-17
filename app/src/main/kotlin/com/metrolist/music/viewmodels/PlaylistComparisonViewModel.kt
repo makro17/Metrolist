@@ -205,7 +205,11 @@ constructor(
 
             // Descending order matters: move() shifts only the positions above the row it moves, so
             // the rows still pending keep the positions just read.
-            database.transaction {
+            //
+            // withTransaction rather than transaction: the latter hands the block to Room's
+            // executor and returns at once, so the comparison below would read the playlist as it
+            // was before the deletion and put the row straight back on screen.
+            database.withTransaction {
                 maps.forEach { map ->
                     move(map.playlistId, map.position, Int.MAX_VALUE)
                     delete(map.copy(position = Int.MAX_VALUE))
@@ -223,7 +227,7 @@ constructor(
             }
             if (wanted.isEmpty()) return@launch
 
-            database.transaction {
+            database.withTransaction {
                 wanted.forEach { insert(it.toMediaMetadata()) }
                 addSongsToPlaylist(target, wanted.map { it.id to it.setVideoId })
             }
