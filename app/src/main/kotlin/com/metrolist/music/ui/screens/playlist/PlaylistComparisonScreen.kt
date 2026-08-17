@@ -6,6 +6,7 @@
 package com.metrolist.music.ui.screens.playlist
 
 import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -136,6 +137,8 @@ fun PlaylistComparisonScreen(
                         rows = if (selectedTab == TAB_ONLY_HERE) current.onlyLocal else emptyList(),
                         enabled = false,
                         primaryIcon = R.drawable.upload,
+                        primaryLabel = R.string.comparison_upload_one,
+                        removeLabel = R.string.remove_from_playlist,
                         onPrimary = {},
                         onRemove = {},
                     )
@@ -161,6 +164,8 @@ fun PlaylistComparisonScreen(
                             rows = current.onlyLocal,
                             enabled = true,
                             primaryIcon = R.drawable.upload,
+                            primaryLabel = R.string.comparison_upload_one,
+                            removeLabel = R.string.remove_from_playlist,
                             onPrimary = { row -> viewModel.uploadToYouTube(listOf(row.id)) },
                             onRemove = { row -> pendingLocalRemoval = row },
                             emptyMessage = stringResource(R.string.comparison_nothing_only_here),
@@ -170,6 +175,8 @@ fun PlaylistComparisonScreen(
                             rows = current.onlyRemote,
                             enabled = true,
                             primaryIcon = R.drawable.download,
+                            primaryLabel = R.string.comparison_add_one,
+                            removeLabel = R.string.comparison_remove_from_youtube,
                             onPrimary = { row -> viewModel.addLocally(listOf(row.id)) },
                             onRemove = { row -> pendingRemoteRemoval = row },
                             emptyMessage = stringResource(R.string.comparison_nothing_only_on_youtube),
@@ -274,6 +281,8 @@ private fun ComparisonList(
     rows: List<ComparisonRow>,
     enabled: Boolean,
     @DrawableRes primaryIcon: Int,
+    @StringRes primaryLabel: Int,
+    @StringRes removeLabel: Int,
     onPrimary: (ComparisonRow) -> Unit,
     onRemove: (ComparisonRow) -> Unit,
     emptyMessage: String? = null,
@@ -314,10 +323,16 @@ private fun ComparisonList(
                 trailingContent = {
                     Row {
                         IconButton(enabled = enabled, onClick = { onPrimary(row) }) {
-                            Icon(painterResource(primaryIcon), contentDescription = null)
+                            Icon(
+                                painter = painterResource(primaryIcon),
+                                contentDescription = stringResource(primaryLabel),
+                            )
                         }
                         IconButton(enabled = enabled, onClick = { onRemove(row) }) {
-                            Icon(painterResource(R.drawable.close), contentDescription = null)
+                            Icon(
+                                painter = painterResource(R.drawable.close),
+                                contentDescription = stringResource(removeLabel),
+                            )
                         }
                     }
                 },
