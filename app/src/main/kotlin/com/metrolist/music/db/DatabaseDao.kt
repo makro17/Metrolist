@@ -1157,6 +1157,11 @@ interface DatabaseDao {
     @Query("SELECT * FROM playlist_song_map WHERE playlistId = :playlistId AND songId IN (:songIds) ORDER BY position")
     fun playlistSongMaps(playlistId: String, songIds: List<String>): List<PlaylistSongMap>
 
+    // A song added on this device and never confirmed by YouTube leaves setVideoId null, which is
+    // what the playlist screen counts to decide whether to offer a comparison.
+    @Query("SELECT COUNT(*) FROM playlist_song_map WHERE playlistId = :playlistId AND setVideoId IS NULL")
+    fun unconfirmedSongCount(playlistId: String): Flow<Int>
+
     @Transaction
     fun addSongToPlaylist(playlist: Playlist, songIds: List<String>) {
         var position = playlist.songCount
