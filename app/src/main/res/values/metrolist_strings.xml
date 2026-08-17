@@ -1029,4 +1029,22 @@
         <item quantity="one">%1$d song was not added to YouTube in %2$s</item>
         <item quantity="other">%1$d songs were not added to YouTube in %2$s</item>
     </plurals>
+    <plurals name="n_songs_added">
+        <item quantity="one">%d song added</item>
+        <item quantity="other">%d songs added</item>
+    </plurals>
+    <plurals name="n_songs_removed">
+        <item quantity="one">%d song removed</item>
+        <item quantity="other">%d songs removed</item>
+    </plurals>
+    <plurals name="remove_n_songs_confirm">
+        <item quantity="one">Remove %1$d song from %2$s?</item>
+        <item quantity="other">Remove %1$d songs from %2$s?</item>
+    </plurals>
+    <string name="remove">Remove</string>
+    <string name="remove_also_from_youtube">They will also be deleted from this playlist on YouTube.</string>
+    <plurals name="playlist_remove_failed">
+        <item quantity="one">%1$d song was not removed from YouTube in %2$s</item>
+        <item quantity="other">%1$d songs were not removed from YouTube in %2$s</item>
+    </plurals>
 </resources>

@@ -1,0 +1,42 @@
+/**
+ * Metrolist Project (C) 2026
+ * Licensed under GPL-3.0 | See git history for contributors
+ */
+
+package com.metrolist.music.ui.menu
+
+/** A playlist and the song ids that should actually be inserted into it. */
+data class PlaylistAddition(
+    val playlistId: String,
+    val songIds: List<String>,
+)
+
+/** What a playlist row's button does, given what that playlist already holds. */
+enum class RowAction {
+    Add,
+    Remove,
+}
+
+/**
+ * A row offers removal only once the playlist holds every source song; holding some of them still
+ * offers add, which then adds the remainder.
+ */
+fun rowActionFor(sourceCount: Int, presentCount: Int): RowAction =
+    if (sourceCount > 0 && presentCount >= sourceCount) RowAction.Remove else RowAction.Add
+
+fun planPlaylistAdditions(
+    selectedPlaylistIds: List<String>,
+    songIds: List<String>,
+    duplicatesByPlaylist: Map<String, List<String>>,
+    skipDuplicates: Boolean,
+): List<PlaylistAddition> =
+    selectedPlaylistIds.mapNotNull { playlistId ->
+        val idsToAdd =
+            if (skipDuplicates) {
+                val duplicates = duplicatesByPlaylist[playlistId].orEmpty().toSet()
+                songIds.filterNot { it in duplicates }
+            } else {
+                songIds
+            }
+        idsToAdd.takeIf { it.isNotEmpty() }?.let { PlaylistAddition(playlistId, it) }
+    }

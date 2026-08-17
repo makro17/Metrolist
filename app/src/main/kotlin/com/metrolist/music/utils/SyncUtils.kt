@@ -1767,6 +1767,78 @@ class SyncUtils @Inject constructor(
         }
     }
 
+    // The setVideoIds are captured by the caller before it deletes the local rows: once the map row
+    // is gone the id can only be recovered by refetching the playlist from YouTube.
+    fun removeSongsFromPlaylist(
+        browseId: String,
+        playlistId: String,
+        playlistName: String,
+        songs: List<Pair<String, String?>>,
+    ) {
+        if (songs.isEmpty()) return
+        markPlaylistModifying(playlistId)
+        syncScope.launch {
+            var failedCount = 0
+            try {
+                // Rows added on the device before setVideoId was persisted have none. Fetch the
+                // remote playlist once for the whole batch rather than once per song.
+                var lookupFailed = false
+                val setVideoIds: Map<String, String?> =
+                    if (songs.any { (_, setVideoId) -> setVideoId == null }) {
+                        val remote = withRetry {
+                            YouTube.playlist(browseId).completed().getOrThrow()
+                        }.onFailure { e ->
+                            lookupFailed = true
+                            Timber.e(e, "Could not fetch $browseId to resolve missing setVideoIds")
+                        }.getOrNull()?.songs.orEmpty().associate { it.id to it.setVideoId }
+                        songs.associate { (songId, setVideoId) ->
+                            songId to (setVideoId ?: remote[songId])
+                        }
+                    } else {
+                        songs.toMap()
+                    }
+
+                songs.forEach { (songId, _) ->
+                    val setVideoId = setVideoIds[songId]
+                    if (setVideoId == null) {
+                        // A song the fetched playlist does not list never reached YouTube, so there
+                        // is nothing to remove and nothing to report. Only count it when the fetch
+                        // itself failed, because then absence proves nothing.
+                        if (lookupFailed) {
+                            failedCount++
+                            Timber.w("Could not resolve setVideoId for $songId, remove not attempted")
+                        } else {
+                            Timber.d("$songId is not on YouTube, nothing to remove")
+                        }
+                        return@forEach
+                    }
+                    withRetry {
+                        runQueuedPlaylistEdit {
+                            YouTube.removeFromPlaylist(browseId, songId, setVideoId).getOrThrow()
+                        }
+                    }.onFailure { e ->
+                        failedCount++
+                        Timber.e(e, "Failed to remove song $songId from playlist $browseId")
+                    }
+                }
+            } finally {
+                unmarkPlaylistModifying(playlistId)
+            }
+
+            if (failedCount > 0) {
+                val message = context.resources.getQuantityString(
+                    R.plurals.playlist_remove_failed,
+                    failedCount,
+                    failedCount,
+                    playlistName,
+                )
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
     fun scheduleRemoveFromPlaylist(
         browseId: String,
         songId: String,
